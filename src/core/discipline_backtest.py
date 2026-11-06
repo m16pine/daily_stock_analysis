@@ -145,16 +145,20 @@ def discipline2_signal(*, bar: DailyBar, prior_completed_weekly_closes: Sequence
 
 
 def discipline1_signal(*, bar: DailyBar, prior_completed_weekly_closes: Sequence[float],
+                       upper_band_touched_earlier_this_week: bool = False,
                        period: int = 20, num_std: float = 2.0) -> DisciplineSignal:
-    """Sell only if today's high touches prior-week upper band AND decline is >=2%."""
+    """Sell if the upper band was touched at any point this week and today's
+    percentage change is <= -2%. The caller supplies the week-to-date touch
+    state from daily bars; today's high is also checked here."""
     band = weekly_bollinger(prior_completed_weekly_closes, period, num_std)
     if band is None:
         return DisciplineSignal(bar.code, bar.trading_date, "D1", False,
                                 ("不足20个已完成周线收盘数据",), "insufficient_weekly_history")
-    touched = bar.high >= band.upper
+    touched_today = bar.high >= band.upper
+    touched = upper_band_touched_earlier_this_week or touched_today
     dropped = bar.pct_change <= -2.0
     reasons = (
-        "当日最高价触及或突破前20个已完成周线计算的布林上轨" if touched else "当日未触及周线布林上轨",
+        "本周此前或当日最高价触及/突破周线布林上轨" if touched else "本周尚未触及周线布林上轨",
         "当日跌幅达到或超过2%" if dropped else "当日跌幅未达到2%",
     )
     return DisciplineSignal(bar.code, bar.trading_date, "D1", touched and dropped, reasons)
