@@ -128,12 +128,12 @@ def discipline2_signal(*, bar: DailyBar, prior_completed_weekly_closes: Sequence
         reasons.append("当日最低价触及或跌破前20个已完成周线计算的布林下轨")
     if rebound:
         reasons.append("当日涨幅达到2%")
-    if valuation is None or valuation.code != bar.code or valuation.available_on > bar.trading_date:
+    if valuation is None or valuation.code != bar.code or valuation.available_on > bar.trading_date or valuation.observed_on > bar.trading_date:
         return DisciplineSignal(bar.code, bar.trading_date, "D2", False,
                                 tuple(reasons + ["缺少信号日可用的历史PE(TTM)快照"]), "missing_pit_valuation")
     pe_ok = valuation.pe_ttm is not None and valuation.pe_ttm <= 15.0
     reasons.append("PE(TTM)不高于15" if pe_ok else "PE(TTM)不满足不高于15")
-    if financial is None or financial.code != bar.code or financial.available_on > bar.trading_date:
+    if financial is None or financial.code != bar.code or financial.available_on > bar.trading_date or financial.announcement_date > bar.trading_date:
         return DisciplineSignal(bar.code, bar.trading_date, "D2", False,
                                 tuple(reasons + ["缺少信号日之前已公告的归母净利润同比数据"]), "missing_pit_financial")
     growth_ok = (financial.attributable_net_profit_yoy_pct is not None
