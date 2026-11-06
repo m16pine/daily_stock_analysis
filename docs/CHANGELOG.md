@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- 🧪 Experimental A-share discipline backtest core: weekly Bollinger rules for Discipline 1/2, point-in-time guards for valuation/fundamentals, and official-source A/B/C event classification for Discipline 3. This is the rule-engine milestone only; data ingestion, persistence, API/UI integration, and empirical backtest results are not yet included.
+
+
 ### Fixed
 - 🐛 **AstrBot sender docstring misplaced** — `import time` placed before docstring in `_send_astrbot`, causing it to become dead code
 - 🐛 **Telegram Markdown link escaping** — `_convert_to_telegram_markdown` escaped `[]()` characters, breaking all Markdown links in reports

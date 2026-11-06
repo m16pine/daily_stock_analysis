@@ -378,6 +378,160 @@ class ConversationMessage(Base):
     created_at = Column(DateTime, default=datetime.now, index=True)
 
 
+
+class DisciplineStockMaster(Base):
+    """Historical security master; retain delisted securities for survivorship control."""
+    __tablename__ = "discipline_stock_master"
+
+    code = Column(String(10), primary_key=True)
+    name = Column(String(80))
+    exchange = Column(String(16))
+    listed_on = Column(Date)
+    delisted_on = Column(Date)
+    security_type = Column(String(24), default="A_SHARE")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class DisciplineValuationPIT(Base):
+    """Point-in-time valuation snapshots; available_on is the first knowable date."""
+    __tablename__ = "discipline_valuation_pit"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), nullable=False, index=True)
+    observed_on = Column(Date, nullable=False)
+    available_on = Column(Date, nullable=False, index=True)
+    pe_ttm = Column(Float)
+    pb = Column(Float)
+    source = Column(String(64), nullable=False)
+    source_record_id = Column(String(128))
+    raw_payload = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (
+        UniqueConstraint("code", "observed_on", "available_on", "source",
+                         name="uix_discipline_valuation_pit"),
+        Index("ix_discipline_valuation_asof", "code", "available_on"),
+    )
+
+
+class DisciplineFinancialPIT(Base):
+    """Financial facts keyed by public announcement/availability date, not report period."""
+    __tablename__ = "discipline_financial_pit"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), nullable=False, index=True)
+    report_period = Column(Date, nullable=False)
+    announcement_date = Column(Date, nullable=False)
+    available_on = Column(Date, nullable=False, index=True)
+    attributable_net_profit = Column(Float)
+    attributable_net_profit_yoy_pct = Column(Float)
+    non_recurring_net_profit = Column(Float)
+    operating_cash_flow = Column(Float)
+    accounts_receivable = Column(Float)
+    inventory = Column(Float)
+    source = Column(String(64), nullable=False)
+    source_record_id = Column(String(128))
+    raw_payload = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (
+        UniqueConstraint("code", "report_period", "announcement_date", "source",
+                         name="uix_discipline_financial_pit"),
+        Index("ix_discipline_financial_asof", "code", "available_on"),
+    )
+
+
+class Discipline3OfficialEvent(Base):
+    """Officially sourced discipline-3 event log. A/B/C levels are kept distinct."""
+    __tablename__ = "discipline3_official_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(10), nullable=False, index=True)
+    event_date = Column(Date, nullable=False)
+    announcement_date = Column(Date, nullable=False, index=True)
+    available_on = Column(Date, nullable=False, index=True)
+    category = Column(String(64), nullable=False)
+    level = Column(String(1), nullable=False)
+    action = Column(String(32), nullable=False)
+    source_type = Column(String(40), nullable=False)
+    source_url = Column(String(1200), nullable=False)
+    verified_official_source = Column(Boolean, nullable=False, default=False)
+    description = Column(Text)
+    raw_payload = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (
+        UniqueConstraint("code", "category", "event_date", "source_url",
+                         name="uix_discipline3_event_source"),
+        Index("ix_discipline3_event_asof", "code", "available_on", "level"),
+    )
+
+
+class DisciplineBacktestRun(Base):
+    """Reproducible strategy backtest run and data coverage diagnostics."""
+    __tablename__ = "discipline_backtest_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_key = Column(String(64), nullable=False, unique=True, index=True)
+    strategy_version = Column(String(24), nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    universe_definition = Column(Text, nullable=False)
+    parameters_json = Column(Text, nullable=False)
+    data_coverage_json = Column(Text)
+    status = Column(String(20), nullable=False, default="created")
+    result_summary_json = Column(Text)
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    completed_at = Column(DateTime)
+
+
+class DisciplineSignalRecord(Base):
+    """Persisted D1/D2 signal, with data lineage and explicit completeness status."""
+    __tablename__ = "discipline_signal_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("discipline_backtest_runs.id"), nullable=False, index=True)
+    code = Column(String(10), nullable=False, index=True)
+    signal_date = Column(Date, nullable=False, index=True)
+    discipline = Column(String(8), nullable=False)
+    triggered = Column(Boolean, nullable=False, default=False)
+    data_status = Column(String(40), nullable=False, default="complete")
+    reasons_json = Column(Text)
+    band_upper = Column(Float)
+    band_lower = Column(Float)
+    pe_ttm = Column(Float)
+    attributable_net_profit_yoy_pct = Column(Float)
+    source_snapshot_json = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (
+        UniqueConstraint("run_id", "code", "signal_date", "discipline",
+                         name="uix_discipline_signal_run"),
+        Index("ix_discipline_signal_lookup", "discipline", "signal_date", "triggered"),
+    )
+
+
+class DisciplineForwardReturn(Base):
+    """Forward outcomes for a signal; windows are trading sessions, not calendar days."""
+    __tablename__ = "discipline_forward_returns"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    signal_id = Column(Integer, ForeignKey("discipline_signal_records.id"), nullable=False, index=True)
+    horizon_sessions = Column(Integer, nullable=False)
+    entry_date = Column(Date)
+    entry_price = Column(Float)
+    exit_date = Column(Date)
+    exit_price = Column(Float)
+    return_pct = Column(Float)
+    max_favorable_excursion_pct = Column(Float)
+    max_adverse_excursion_pct = Column(Float)
+    executable = Column(Boolean)
+    execution_note = Column(String(240))
+    created_at = Column(DateTime, default=datetime.now)
+    __table_args__ = (
+        UniqueConstraint("signal_id", "horizon_sessions",
+                         name="uix_discipline_forward_horizon"),
+    )
+
+
 class DatabaseManager:
     """
     数据库管理器 - 单例模式
