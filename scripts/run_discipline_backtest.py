@@ -137,10 +137,16 @@ def run(start: date, end: date, horizons: list[int]) -> dict[str, Any]:
                     active_week = week_key
                     touched_upper_this_week = False
 
-                while v_idx < len(val_list) and val_list[v_idx].available_on <= bar.trading_date and val_list[v_idx].observed_on <= bar.trading_date:
-                    latest_v = val_list[v_idx]; v_idx += 1
-                while f_idx < len(fin_list) and fin_list[f_idx].available_on <= bar.trading_date and fin_list[f_idx].announcement_date <= bar.trading_date:
-                    latest_f = fin_list[f_idx]; f_idx += 1
+                while v_idx < len(val_list) and val_list[v_idx].available_on <= bar.trading_date:
+                    candidate = val_list[v_idx]
+                    if candidate.observed_on <= bar.trading_date:
+                        latest_v = candidate
+                    v_idx += 1
+                while f_idx < len(fin_list) and fin_list[f_idx].available_on <= bar.trading_date:
+                    candidate = fin_list[f_idx]
+                    if candidate.announcement_date <= bar.trading_date:
+                        latest_f = candidate
+                    f_idx += 1
 
                 prior_weeks = [d for d in week_end_dates if d < bar.trading_date]
                 closes = [week_ends[d][0] for d in prior_weeks[-20:]]
@@ -161,27 +167,30 @@ def run(start: date, end: date, horizons: list[int]) -> dict[str, Any]:
                     valuation=(PitValuation(code, latest_v.observed_on, latest_v.available_on, latest_v.pe_ttm) if latest_v else None),
                     financial=(PitFinancial(code, latest_f.announcement_date, latest_f.available_on, latest_f.attributable_net_profit_yoy_pct) if latest_f else None),
                 )
+                persisted_signal_ids = {}
                 for sig in (d1, d2):
-                    repo.save_signal(run_id=run_id, code=code, signal_date=bar.trading_date,
-                                     discipline=sig.discipline, triggered=sig.triggered,
-                                     data_status=sig.data_status, reasons=list(sig.reasons),
-                                     band_upper=upper.upper if upper else None,
-                                     band_lower=upper.lower if upper else None,
-                                     pe_ttm=latest_v.pe_ttm if latest_v else None,
-                                     attributable_net_profit_yoy_pct=latest_f.attributable_net_profit_yoy_pct if latest_f else None)
+                    persisted_signal_ids[sig.discipline] = repo.save_signal(
+                        run_id=run_id, code=code, signal_date=bar.trading_date,
+                        discipline=sig.discipline, triggered=sig.triggered,
+                        data_status=sig.data_status, reasons=list(sig.reasons),
+                        band_upper=upper.upper if upper else None,
+                        band_lower=upper.lower if upper else None,
+                        pe_ttm=latest_v.pe_ttm if latest_v else None,
+                        attributable_net_profit_yoy_pct=latest_f.attributable_net_profit_yoy_pct if latest_f else None)
                 if d1.triggered: signals["D1"] += 1
                 if d2.triggered: signals["D2"] += 1
                 if d2.data_status == "missing_pit_valuation": data_gaps["missing_pit_valuation"] += 1
                 if d2.data_status == "missing_pit_financial": data_gaps["missing_pit_financial"] += 1
 
-                if d1.triggered or d2.triggered:
-                    discipline = "D1" if d1.triggered else "D2"
-                    signal_rows = stock_rows
-                    next_rows = [x for x in signal_rows if x.date > bar.trading_date]
+                next_rows = [x for x in stock_rows if x.date > bar.trading_date]
+                for discipline, triggered in (("D1", d1.triggered), ("D2", d2.triggered)):
+                    if not triggered:
+                        continue
                     if not next_rows or not next_rows[0].open:
                         data_gaps["no_forward_entry"] += 1
                         continue
                     entry = next_rows[0]
+                    signal_id = persisted_signal_ids[discipline]
                     for h in horizons:
                         if len(next_rows) < h:
                             continue
@@ -193,8 +202,14 @@ def run(start: date, end: date, horizons: list[int]) -> dict[str, Any]:
                         mfe = (max(float(x.high or 0) for x in future) / float(entry.open) - 1) * 100
                         mae = (min(float(x.low or entry.open) for x in future) / float(entry.open) - 1) * 100
                         all_returns[discipline][h].append(ret)
-                        # Forward return row is attached to the persisted signal id in repository;
-                        # the signal is uniquely queried by run/code/date/discipline below.
+                        repo.save_forward_return(
+                            signal_id=signal_id, horizon_sessions=h,
+                            entry_date=entry.date, entry_price=float(entry.open),
+                            exit_date=exit_row.date, exit_price=float(exit_row.close),
+                            return_pct=ret, executable=True,
+                            max_favorable_excursion_pct=mfe,
+                            max_adverse_excursion_pct=mae,
+                            execution_note="Next-session open entry; horizon-session close exit. Suspensions/limit locks require separate execution validation.")
 
         # Official event study: retain primary-source-only classification, do not infer trades
         for ev in events:
