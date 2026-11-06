@@ -36,4 +36,16 @@ Accepted source types: exchange/company announcements, CSRC decisions, court doc
 - No performance result is valid until PIT coverage, delisted-stock coverage and data-quality checks are reported.
 
 ## Current implementation boundary
-src/core/discipline_backtest.py contains pure signal and event classification logic. It does not fetch data, infer missing PIT dates, or claim historical performance. Database persistence, source adapters, API and UI integration are subsequent steps.
+- `src/core/discipline_backtest.py`: pure D1/D2 signal and D3 event classification logic.
+- `src/storage.py` and `src/repositories/discipline_backtest_repo.py`: persistent PIT snapshots, event records, runs, signals and forward-return observations.
+- `scripts/run_discipline_backtest.py`: CLI scanner over data already stored in the application's database. It does not download data or fabricate missing history.
+
+Run after loading historical daily bars and PIT valuation/fundamental records:
+
+```bash
+python scripts/run_discipline_backtest.py --start 2021-01-01 --end 2026-11-06 --horizons 5,10,20
+```
+
+The command writes a run record and prints coverage diagnostics. It marks runs partial if coverage gaps exist or the security master does not cover all observed stock codes. The current CLI is an initial research runner, not a fully executable portfolio simulator: it does not yet model lot sizes, fees, slippage, limit locks, suspension re-entry, delisted-stock cash recovery, or a complete historical ST universe. D3 currently classifies and counts official event records; the 5/20/60-session D3 execution study remains to be implemented.
+
+No historical performance result is valid until the underlying database is populated with audited source data and coverage is reported.
