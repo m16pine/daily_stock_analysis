@@ -23,6 +23,9 @@ class DisciplineBacktestTests(unittest.TestCase):
         miss = DailyBar("600000", date(2025, 1, 7), 100, band.upper - 1, 98, 98, -2.1)
         self.assertTrue(discipline1_signal(bar=hit, prior_completed_weekly_closes=self.closes).triggered)
         self.assertFalse(discipline1_signal(bar=miss, prior_completed_weekly_closes=self.closes).triggered)
+        # A prior touch in the same week plus today's >=2% decline also triggers.
+        later_drop = DailyBar("600000", date(2025, 1, 8), 100, band.upper - 2, 98, 98, -2.0)
+        self.assertTrue(discipline1_signal(bar=later_drop, prior_completed_weekly_closes=self.closes, upper_band_touched_earlier_this_week=True).triggered)
 
     def test_discipline2_all_four_conditions_required(self):
         band = weekly_bollinger(self.closes)
